@@ -2,7 +2,8 @@
 
 A small personal addon that lets me update my MyAnimeList entries from inside Nuvio, the app I watch
 anime in. I can set a status, mark episodes watched, rate a show and read the episode's discussion
-thread without leaving the episode I'm on.
+thread without leaving the episode I'm on. It also gets subtitles for anime that my subtitle addons
+couldn't find before.
 
 > The source code is private. This repo is a write-up of what it does and how it's built.
 
@@ -31,6 +32,10 @@ screenshot above.
   MAL is already updated by the time the page loads.
 - **The 💬 row** opens that episode's discussion thread from MAL's forum, on a page built for
   reading it: spoilers blurred until tapped, long posts collapsed, oldest or newest first.
+
+- **Subtitles show up in the player's subtitle menu** for anime too. My subtitle addons only
+  understand IMDb ids, and anime in Nuvio comes in with Kitsu or MAL ids, so they used to return
+  nothing. This addon translates the episode and asks them for me.
 
 <img src="assets/done-page.png" alt="Confirmation page: 'Done ✓ Cyberpunk: Edgerunners 2 watched up to ep 10 of 10 · Completed.' with a link to MyAnimeList" width="520">
 
@@ -117,6 +122,38 @@ real responses. What I found:
   formatting. Nothing from a post is rendered as-is.
 - **There are no likes.** MAL's API doesn't return likes or scores for forum posts.
 
+### Subtitles for anime: translating episode numbers
+
+Subtitle addons like OpenSubtitles only accept IMDb ids, but Nuvio identifies anime episodes by
+Kitsu or MAL id, like `kitsu:12:1000`. So the addon also answers Stremio's native `subtitles`
+request: it converts the episode to an IMDb season and episode, asks the subtitle addons in
+parallel (3 seconds each, a slow one is skipped), then merges and dedupes the results, English first.
+
+The hard part is the episode number. Anime and IMDb count episodes differently:
+
+- **Split seasons:** MAL's "Attack on Titan Season 3 Part 2" starts at episode 1, but on IMDb that's
+  season 3, episode 13.
+- **Long shows:** One Piece is numbered straight through on MAL (episode 1000), but split into
+  seasons everywhere else.
+
+My first version guessed by counting Cinemeta's episode list, and it was one episode off for One
+Piece after episode 590. The reason: TVDB files that crossover episode as a special. I fixed it in
+layers:
+
+1. [ARM](https://arm.haglund.dev) gives the IMDb id.
+2. The community [Anime-Lists](https://github.com/Anime-Lists/anime-lists) XML gives the season and
+   offset, including its per-episode overrides. For One Piece, episode 1000 lands in season 21 at an
+   offset of 891, which makes it S21E109.
+3. Every answer is checked against IMDb's episode list by air date, using Kitsu's date for the
+   episode. If they're more than three days apart, the episode that aired closest to that date wins.
+   That check alone also fixes the old off-by-one.
+
+I checked the expected answers against TheTVDB's own pages, not against my code, and wrote them up
+as tests: One Piece 1, 500 and 1000, Bleach 300 and Attack on Titan's final season. A small debug
+endpoint shows which rule decided any episode, so I can spot-check shows. The mapping is also
+started in the background when the menu loads, so it's usually cached before the player asks for
+subtitles.
+
 ### Staying under two seconds
 
 | Data | Cached for |
@@ -125,13 +162,16 @@ real responses. What I found:
 | My list status for a show | 2 minutes, cleared after every action |
 | Forum thread ID | Permanently (the comment count refreshes every 6 hours) |
 | A page of comments | 10 minutes |
+| Anime → IMDb episode mapping | 7 days per show, 1 day per episode |
+| Subtitle results | 1 hour |
 
 With warm caches the menu answers in under a second.
 
 ## Stack
 
 TypeScript · Vercel Functions · Upstash Redis · MyAnimeList API v2 ·
-[ARM](https://arm.haglund.dev) for anime ID mapping
+[ARM](https://arm.haglund.dev) and [Anime-Lists](https://github.com/Anime-Lists/anime-lists) for
+anime ID and episode mapping · Cinemeta and Kitsu for episode air dates · `node:test`
 
 ## Limits
 
@@ -139,3 +179,5 @@ TypeScript · Vercel Functions · Upstash Redis · MyAnimeList API v2 ·
 - **No Reddit tab.** I wanted r/anime's episode threads alongside MAL's, but Reddit now requires a
   manually approved API app, so that waits.
 - **No likes on the discussion page.** MAL's API doesn't provide them.
+- **Some subtitle mappings can't be double-checked.** Kitsu has no air date for some episodes, so
+  those rely on the Anime-Lists mapping alone.
