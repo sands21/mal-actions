@@ -127,7 +127,7 @@ real responses. What I found:
 Subtitle addons like OpenSubtitles only accept IMDb ids, but Nuvio identifies anime episodes by
 Kitsu or MAL id, like `kitsu:12:1000`. So the addon also answers Stremio's native `subtitles`
 request: it converts the episode to an IMDb season and episode, asks the subtitle addons in
-parallel (3 seconds each, a slow one is skipped), then merges and dedupes the results, English first.
+parallel (8 seconds each, a slow one is skipped), then merges and dedupes the results, English first.
 
 The hard part is the episode number. Anime and IMDb count episodes differently:
 
